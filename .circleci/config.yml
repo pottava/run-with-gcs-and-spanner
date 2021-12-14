@@ -1,0 +1,38 @@
+version: 2.1
+orbs:
+  gcp-cli: circleci/gcp-cli@2.4.0
+jobs:
+  test:
+    executor: gcp-cli/default
+    steps:
+      - checkout
+      - run:
+          name: Install Skaffold
+          command: |
+            curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+            chmod +x skaffold && sudo mv skaffold /usr/local/bin
+            skaffold version
+      - run:
+          name: Build & Push
+          command: skaffold build --default-repo '${{ env.GOOGLECLOUD_REGION}}-docker.pkg.dev/${{ secrets.GOOGLECLOUD_PROJECT_ID }}/cd-test' --push --file-output=build.out
+  release:
+    executor: gcp-cli/default
+    steps:
+      - checkout
+      - gcp-cli/install
+      - gcp-cli/initialize
+      - run:
+          name: Make a release
+          command: |
+            gcloud components install beta
+            gcloud beta deploy releases create "git-${GITHUB_SHA::7}" --region ${{ env.CLOUDDEPLOY_REGION }} --delivery-pipeline=kustomize-pipeline --build-artifacts=build.out --annotations="commitId=${GITHUB_SHA},author=${GITHUB_ACTOR},date=$(date '+%Y-%m-%d %H:%M:%S')"
+
+workflows:
+  version: 2
+  tasks:
+    jobs:
+      - test:
+      - deploy:
+          filters:
+            branches:
+              only: main
